@@ -11,12 +11,27 @@ class IPHeader:
                     de destino del paquete.
   port (int): Puerto en que se encuentra escuchando el router de destino
               del paquete en la IP ip_address.
+  ttl (int): Time To Live.
+  id (str): Identificador que permite identificar todos los fragmentos 
+            que forman parte de un mismo paquete IP.
+  offset (int): Entero que indica a partir el lugar de inicio de la 
+                secuencia de bytes contenido en msg, relativo al datagrama IP.
+  size (str): Se refiere al tamaño de msg en bytes. Asumimos que este header 
+              siempre contiene 8 dígitos. De esta forma si msg es de tamaño 
+              300 bytes , entonces se tendrá size='00000300'.
+  flag (bool): Etiqueta que toma el valor True si quedan fragmentos después 
+               del fragmento actual, y toma el valor False si este es el 
+               último fragmento del datagrama original.
   msg (str): Mensaje siendo enviado en el paquete.
   """
 
   ip_address: str
   port: int
   ttl: int
+  id: str
+  offset: int
+  size: str
+  flag: bool
   msg: str
 
   def to_string(self) -> str:
@@ -45,6 +60,7 @@ class RoutingTableLine:
   landing_ip (str): Dirección IP donde redirigir dados los valores anteriores
   landing_port (int): Puerto donde redirigir dados los primeros dos valores y la IP 
                       anterior
+  mtu (int): Cantidad máxima de información en bytes que podemos enviar a través del enlace.
   """
 
   possible_ip_addresses: list[str]
@@ -52,6 +68,7 @@ class RoutingTableLine:
   final_port: int
   landing_ip: str
   landing_port: int
+  mtu: int
 
 class CircularArrayWithPointer:
   """Clase usada para representar un arreglo circular, con un puntero indicando
@@ -99,13 +116,13 @@ class CircularArrayWithPointer:
 
 def parse_routing_table_line(routing_table_line: str) -> RoutingTableLine:
   """Función que dada una linea de una tabla de ruteo, de la forma
-  [Red (CIDR)] [Puerto_Inicial] [Puerto_final] [IP_Para_llegar] [Puerto_para_llegar],
+  [Red (CIDR)] [Puerto_Inicial] [Puerto_final] [IP_Para_llegar] [Puerto_para_llegar] [MTU],
   la parsea retornando una instancia de RoutingTableLine.
 
   Parameters:
   -----------
   routing_table_line (str): Linea de una tabla de ruteo, la cual debe ser de la forma
-                            [Red (CIDR)] [Puerto_Inicial] [Puerto_final] [IP_Para_llegar] [Puerto_para_llegar].
+                            [Red (CIDR)] [Puerto_Inicial] [Puerto_final] [IP_Para_llegar] [Puerto_para_llegar] [MTU].
   
   Returns:
   --------
@@ -122,6 +139,7 @@ def parse_routing_table_line(routing_table_line: str) -> RoutingTableLine:
   final_port = int(routing_table_line_contents_list[2])
   landing_ip = routing_table_line_contents_list[3]
   landing_port = int(routing_table_line_contents_list[4])
+  mtu = int(routing_table_line_contents_list[5])
 
   # Generamos la lista con todas las potenciales direcciones IP generadas 
   # a partir de la red (CIDR) presente en la linea.
@@ -129,7 +147,7 @@ def parse_routing_table_line(routing_table_line: str) -> RoutingTableLine:
 
   # Retornamos la instancia de RoutingTableLine
   return RoutingTableLine(possible_ip_addresses, initial_port, 
-                          final_port, landing_ip, landing_port)
+                          final_port, landing_ip, landing_port, mtu)
 
 class RoundRobinRoutingTable:
   """Clase usada para representar tablas de ruteo, añadiendo la funcionalidad
@@ -158,7 +176,7 @@ class RoundRobinRoutingTable:
     destination_ip, destination_port = destination_address
 
     # Creamos la lista con la cual inicializar la instancia de CircularArrayWithPointer
-    forward_adresses_list = []
+    forward_adresses_mtu_list = []
 
     # Abrimos el archivo que contiene la tabla de ruteo y leemos sus lineas
     routing_table_file = open(self.__routing_table_file_name, 'r')
@@ -175,24 +193,25 @@ class RoundRobinRoutingTable:
           destination_port in range(routing_table_line.initial_port, routing_table_line.final_port + 1)):
       
         # De ser el caso agregamos la dirección a la cual hacer forward a la lista con la cual inicializar
-        # el CircularArrayWithPointer
+        # el CircularArrayWithPointer, y asi mismo el MTU del enlace
         next_hop_ip, next_hop_port = (routing_table_line.landing_ip, routing_table_line.landing_port)
-        forward_adresses_list.append((next_hop_ip, next_hop_port))
+        link_mtu = routing_table_line.mtu
+        forward_adresses_mtu_list.append(((next_hop_ip, next_hop_port), link_mtu))
 
     # Cerramos el archivo con tabla de ruteo
     routing_table_file.close()
 
     # Finalmente inicializamos la entrada asociada a esta dirección de destino
-    self.__table[destination_address] = CircularArrayWithPointer(forward_adresses_list)
+    self.__table[destination_address] = CircularArrayWithPointer(forward_adresses_mtu_list)
 
-  def next_hop(self, destination_address: tuple[str, int]) -> tuple[str, int] | None:
+  def next_hop(self, destination_address: tuple[str, int]) -> tuple[tuple[str, int], int] | None:
     """Método usado para, dada la lista de ruteo con que se instancia este
     objeto, y la dirección de destino pasada como parámetro, obtener el próximo salto
-    en el arreglo circular de posibles formas de hacer forward. Si no existe una entrada
-    en el diccionario subyacente, este se genera antes de retornar. Notemos que si no existe
-    una forma de hacer forward, por la manera en que está implementado el método encargado
-    de generar el arreglo circular, y el comportamiento del arreglo circular al estar vacío,
-    se retorna None (que es el comportamiento esperado).
+    en el arreglo circular de posibles formas de hacer forward, junto con el MTU del enlace.
+    Si no existe una entrada en el diccionario subyacente, este se genera antes de retornar. 
+    Notemos que si no existe una forma de hacer forward, por la manera en que está implementado 
+    el método encargado de generar el arreglo circular, y el comportamiento del arreglo circular 
+    al estar vacío, se retorna None (que es el comportamiento esperado).
 
     Parameters:
     -----------
@@ -201,10 +220,11 @@ class RoundRobinRoutingTable:
 
     Returns:
     --------
-    (tuple[str, int] | None): Próxima manera de hacer forward, donde de existir una se retorna
-                              (next_hop_IP, next_hop_port). Ahora, si no existe una forma de
-                              hacer forward, el arreglo circular subyacente estará vacio y por
-                              ende se retornará None.
+    (tuple[tuple[str, int], int] | None): Próxima manera de hacer forward junto con el MTU del
+                                          enlace, donde de existir una se retorna 
+                                          ((next_hop_IP, next_hop_port), link_mtu). Ahora, si no
+                                          existe una forma de hacer forward, el arreglo circular 
+                                          subyacente estará vacio y por ende se retornará None.
     """
     if destination_address in self.__table:
       return self.__table[destination_address].next()
@@ -216,13 +236,14 @@ class RoundRobinRoutingTable:
 
 def parse_ip_header(ip_header: str) -> IPHeader:
   """Función encargada de, dado un header IP representado como
-  un string de la forma [Dirección IP],[Puerto],[TTL],[mensaje], retornar
-  un objeto de la data class IPHeader.
+  un string de la forma:
+    [Dirección IP],[Puerto],[TTL],[ID],[Offset],[Tamaño],[FLAG],[mensaje]
+  retornar un objeto de la data class IPHeader.
 
   Parameters:
   -----------
   ip_header (str): Header IP representado como un string de la forma 
-                   [Dirección IP],[Puerto],[TTL],[mensaje]
+                   [Dirección IP],[Puerto],[TTL],[ID],[Offset],[Tamaño],[FLAG],[mensaje]
   
   Returns:
   --------
@@ -233,20 +254,25 @@ def parse_ip_header(ip_header: str) -> IPHeader:
   # Extraemos el contenido del header
   packet_contents_list = ip_header.split(',')
 
-  # Guardamos el contenido en variables ad-hoc
+  # Guardamos la itnerpretación del contenido en variables ad-hoc
   ip_address = packet_contents_list[0]
   port = int(packet_contents_list[1])
   ttl = int(packet_contents_list[2])
-  msg = packet_contents_list[3]
+  id = packet_contents_list[3]
+  offset = int(packet_contents_list[4])
+  size = packet_contents_list[5]
+  # Asumimos que el FLAG será solo 0 o 1
+  flag = True if packet_contents_list[6] == '1' else False 
+  msg = packet_contents_list[7]
 
   # Retornamos el contenido empaquetado en una instancia de IPHeader
-  return IPHeader(ip_address, port, ttl, msg)
+  return IPHeader(ip_address, port, ttl, id, offset, size, flag, msg)
 
 def next_hop(round_robin_routing_table: RoundRobinRoutingTable, 
-             destination_address: tuple[str, int]) -> tuple[str, int] | None:
+             destination_address: tuple[str, int]) -> tuple[tuple[str, int], int] | None:
   """Función que dada una tabla de ruteo de tipo Round Robin, y un par
-  (destination_ip, destination_port), retorna la siguiente manera de hacer forward usando la
-  tabla de ruteo subyacente a la instancia de RoundRobinRoutingTable pasada como parámetro.
+  (destination_ip, destination_port), retorna la siguiente manera de hacer forward y el MTU del
+  enlace usando la tabla de ruteo subyacente a la instancia de RoundRobinRoutingTable pasada como parámetro.
   De encontrar una dirección donde redirigir se retorna dicho par, de lo contrario se retorna None.
 
   Parameters:
@@ -258,11 +284,11 @@ def next_hop(round_robin_routing_table: RoundRobinRoutingTable,
   
   Returns:
   --------
-  (tuple[str, int] | None): De encontrar una o más direcciones donde redirigir, se retorna la siguiente
-                            dirección en el arreglo circular subyacente, que será de la forma
-                            (next_hop_IP, next_hop_port), pero de recorrer la tabla completa y no encontrar
-                            una ruta apropiada, se retorna None.
+  (tuple[tuple[str, int], int] | None): De encontrar una o más direcciones donde redirigir, se retorna 
+                                        la siguiente dirección en el arreglo circular subyacente junto
+                                        con el MTU del enlace, que será de la forma
+                                        ((next_hop_IP, next_hop_port), link_mtu), pero de recorrer la 
+                                        tabla completa y no encontrar una ruta apropiada, se retorna None.
   """
 
   return round_robin_routing_table.next_hop(destination_address)
-  
