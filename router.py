@@ -59,7 +59,7 @@ if __name__ == '__main__':
       else:
 
         # Generamos el siguiente salto
-        forward_address = next_hop(
+        forward_address, link_mtu = next_hop(
           round_robin_routing_table,
           (ip_header.ip_address, ip_header.port)
         )
@@ -79,8 +79,12 @@ if __name__ == '__main__':
           # Decrementamos el TTL
           ip_header.ttl -= 1
 
-          # Para finalmente realizar la redirección
-          conn_socket.sendto(ip_header.to_string().encode(), forward_address)
+          # Fragmentamos el paquete
+          fragments = fragment_ip_packet(ip_header_buffer.decode(), link_mtu)
+
+          # Realizamos la dirección para cada fragmento
+          for fragment in fragments:
+            conn_socket.sendto(fragment.encode(), forward_address)
 
 
 
