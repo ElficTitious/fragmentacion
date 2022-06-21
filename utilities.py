@@ -45,7 +45,8 @@ class IPHeader:
            parse_ip_header. Es decir parse_ip_header(s).to_string() == s
            siempre se cumple.
     """
-    return f'{self.ip_address},{self.port},{self.ttl},{self.msg}'
+    return ','.join([self.ip_address, str(self.port), str(self.ttl), self.id,
+                     str(self.offset), self.size, '1' if self.flag else '0', self.msg])
 
 @dataclass
 class RoutingTableLine:
@@ -292,3 +293,113 @@ def next_hop(round_robin_routing_table: RoundRobinRoutingTable,
   """
 
   return round_robin_routing_table.next_hop(destination_address)
+
+def generate_ip_header_size(size: int) -> str:
+  """Función auxiliar usada para generar el largo de un mensaje inmerso dentro de un
+  header IP siguiendo la convención de 8 digitos.
+
+  Parameters:
+  -----------
+  size (int): Largo de un mensaje a convertir al formato correcto de 8 digitos
+
+  Returns:
+  --------
+  (str): Mismo largo que el pasado como parámetro pero en el formato correcto para
+         usar como size dentro de un paquete IP.
+         Ejemplo: generate_ip_header_size(255) -> '00000255'
+  """
+  
+  size_in_correct_format = f'{size}'
+
+  # Mientras size_in_correct_format no tenga 8 digitos agregamos un 0 al comienzo
+  while len(size_in_correct_format) < 8:
+    size_in_correct_format = '0' + size_in_correct_format
+  
+  return size_in_correct_format
+
+def fragment_ip_packet(ip_packet: str, mtu: int) -> list[str]:
+  """Función encargada de fragmentar un paquete IP dado como parametro para que quepa
+  a través de un enlace con el MTU dado.
+
+  Parameters:
+  -----------
+  ip_packet (str): Paquete IP a fragmentar.
+  mtu (int): MTU mediante el cual fragmentar el paquete IP.
+
+  Returns:
+  --------
+  (list[str]): Lista que contiene al paquete IP fragmentado usando el MTU pasado como
+               parámetro.
+  """
+
+  # Si el largo en bytes del paquete es menor o igual a MTU, csgnifica que 
+  # cabe completo por el enalce y por ende no es necesario fragmentarlo.
+  if len(ip_packet.encode()) <= mtu:
+    return [ip_packet]
+
+  # De lo contrario es necesario llevar a cabo fragmentación.
+  else:
+
+    # Creamos un lista donde guardar los fragmentos
+    fragments_list = []
+
+    # Parseamos el paquete IP
+    parsed_ip_packet = parse_ip_header(ip_packet)
+
+    # Guardamos el mensaje total
+    msg = parsed_ip_packet.msg
+
+    # Para cada fragmento se heradan los campos [Dirección IP],[Puerto],[TTL] e [ID]
+    ip_address = parsed_ip_packet.ip_address
+    port = parsed_ip_packet.port
+    ttl = parsed_ip_packet.ttl
+    id = parsed_ip_packet.id
+
+    # Creamos una variable donde almacenar el offset dentro de este mensaje; puede darse,
+    # si ip_packet es un fragmento, que offset_in_msg != parsed_ip_packet.offset
+    offset_in_msg = 0
+
+    # Iteramos mientras no hayamos recorrido el mensaje completo
+    while offset_in_msg < len(msg.encode()):
+
+      # Calculamos los headers para el fragmento actual
+      curr_frag_offset = parsed_ip_packet.offset + offset_in_msg
+      curr_frag_size = '00000000'  # Usamos 8 ceros como placeholder
+      # Por defecto seteamos el flag como True, ahora, si el paquete original no es fragmento,
+      # luego ponemos el flag del último fragmento como False
+      curr_frag_flag = True
+      curr_frag_flag_as_str = '1'
+
+      # Construimos el fragment header solo para calcular su largo en bytes
+      fragment_header = f'{ip_address},{port},{ttl},{id},{curr_frag_offset},{curr_frag_size},{curr_frag_flag_as_str},'
+      fragment_header_len = len(fragment_header.encode())
+
+      # Calculamos el largo maximo de mensaje que se puede introducir en el fragmento actual
+      curr_fragment_max_msg_len = mtu - fragment_header_len
+
+      # Construimos el mensaje a incluir en el fragmento
+      curr_frag_msg = msg.encode()[curr_frag_offset:curr_frag_offset + curr_fragment_max_msg_len]
+
+      # Asignamos el valor correcto de size
+      curr_frag_size = generate_ip_header_size(len(curr_frag_msg))
+
+      # Construimos el fragmento y lo agregamos a la lista
+      curr_fragment = IPHeader(
+        ip_address, port, ttl, id, curr_frag_offset,
+        curr_frag_size, curr_frag_flag, curr_frag_msg.decode()
+      )
+      fragments_list.append(curr_fragment)
+
+      # Actualizamos offset_in_msg
+      offset_in_msg += len(curr_frag_msg)
+
+    # Si el paquete original no era un fragmento, marcamos el FLAG del último
+    # fragmento como False
+    if not parsed_ip_packet.flag:
+      fragments_list[-1].flag = False
+
+    # Finalmente hacemos un map a la lista de fragmentos pasando cada fragmento
+    # a su representación como string, y la retornamos
+    fragments_list = list(map(lambda ip_header: ip_header.to_string(), fragments_list))
+    return fragments_list
+
