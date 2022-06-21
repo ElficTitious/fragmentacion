@@ -403,3 +403,74 @@ def fragment_ip_packet(ip_packet: str, mtu: int) -> list[str]:
     fragments_list = list(map(lambda ip_header: ip_header.to_string(), fragments_list))
     return fragments_list
 
+def reassemble_ip_packet(fragment_list: list[str]) -> str | None:
+  """Función encargada de reensamblar un paquete IP a partir de una lista
+  de sus fragmentos. Si la lista de fragmentos está incompleta se retorna
+  None.
+
+  Parameters:
+  -----------
+  fragment_list (list[str]): Lista de fragmentos a ensamblar.
+
+  Returns:
+  --------
+  (str | None): Si la lista de fragmentos está completa, luego se
+                retorna el paquete IP reensamblado, de lo contrario se
+                retorna None.
+  """
+
+  # Primero mapeamos la lista a instancias de la clase IPHeader
+  fragment_list = list(map(parse_ip_header, fragment_list))
+
+  # Luego la ordenamos de manera ascendente por el offset
+  fragment_list = sorted(fragment_list, key=lambda ip_header: ip_header.offset)
+
+  # Creamos una variable booleana donde almacenar el valor de verdad indicando
+  # que la lista de fragmentos está completa. Una primera condición que se debe
+  # cumplir es que el primer fragmento tenga offset 0, por lo que inicializamos
+  # la variable con el valor de verdad de aquella proposición.
+  fragment_list_is_complete = (fragment_list[0].offset == 0)
+
+  # A continuación hacemos una pasada por la lista revisando que esté completa
+  # y aprovechando de reensamblar el mensaje
+  i = 0
+  total_msg = fragment_list[0].msg
+  while fragment_list_is_complete and i < len(fragment_list) - 1:
+
+    # Almacenamos el fragmento actual y el siguiente
+    curr_frag = fragment_list[i]
+    next_frag = fragment_list[i+1]
+
+    # Añadimos el siguiente pedazo del mensaje
+    total_msg += next_frag.msg
+
+    # Se debe cumplir en cada posición que el offset del fragmento igual, mas
+    # el largo de su mensaje, sea igual al offset del siguiente fragmento. Donde
+    # si no se cumple dicha condición, podemos setear fragment_list_is_complete
+    # a False y romper el ciclo
+    if curr_frag.offset + int(curr_frag.size) != next_frag.offset:
+      fragment_list_is_complete = False
+      break
+
+    # Si no se rompe el ciclo aumentamos el contador en 1
+    i += 1
+
+  # Una última condición que debe cumplirse es que el flag del último fragmento sea
+  # 0 (o en este caso False --los fragmentos están representados como IPHeader--).
+  # Luego si se satisface lo contrario podemos setear fragment_list_is_complete a False
+  if fragment_list[-1].flag:
+    fragment_list_is_complete = False
+  
+  # Si la lista de fragmentos estaba completa, luego podemos reensamblar el mensaje
+  if fragment_list_is_complete:
+
+    # Creamos el paquete reensamblado primero como una instancia de IPHeader, para luego
+    # pasarlo a string y retornarlo. Podemos tomar los headers del primer fragmento, donde
+    # lo único que habría que cambiar es el flag a 0, y el tamaño al largo total del mensaje.
+    fst_frag = fragment_list[0]
+    reassembled_ip_packet = IPHeader(
+      fst_frag.ip_address, fst_frag.port, fst_frag.ttl, fst_frag.id,
+      fst_frag.offset, generate_ip_header_size(len(total_msg.encode())),
+      False, total_msg
+    )
+    return reassembled_ip_packet.to_string()
