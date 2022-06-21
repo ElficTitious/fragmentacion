@@ -378,7 +378,7 @@ def fragment_ip_packet(ip_packet: str, mtu: int) -> list[str]:
       curr_fragment_max_msg_len = mtu - fragment_header_len
 
       # Construimos el mensaje a incluir en el fragmento
-      curr_frag_msg = msg.encode()[curr_frag_offset:curr_frag_offset + curr_fragment_max_msg_len]
+      curr_frag_msg = (msg.encode())[offset_in_msg:offset_in_msg + curr_fragment_max_msg_len]
 
       # Asignamos el valor correcto de size
       curr_frag_size = generate_ip_header_size(len(curr_frag_msg))

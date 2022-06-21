@@ -35,6 +35,9 @@ if __name__ == '__main__':
     # Instanciamos una tabla de ruteo de tipo RoundRobinRoutingTable
     round_robin_routing_table = RoundRobinRoutingTable(routing_table_file_name)
 
+    # Creamos el diccionario donde almacenar los fragmentos
+    fragment_dict = {}
+
     # Recibimos paquetes de forma indefinida
     while True:
       
@@ -51,9 +54,25 @@ if __name__ == '__main__':
       if ip_header.ttl <= 0:
         continue
 
-      # Si el mensaje es para este router, imprimimos en pantalla el mensaje
+      # Si el datagrama es para este router, intentamos reensamblar, y si aquello es
+      # satisfactorio, imprimimos el mensaje en pantalla
       if ip_header.ip_address == router_IP and ip_header.port == router_port:
-        print(ip_header.msg)
+
+        # Si no tenemos una llave para la id del datagram recibido la creamos y la
+        # mapeamos a una lista vacía.
+        if ip_header.id not in fragment_dict:
+          fragment_dict[ip_header.id] = []
+
+        # Agregamos el datagrama a la lista e intentamos reensamblar
+        fragment_dict[ip_header.id].append(ip_header_buffer.decode())
+        reassembled_datagram = reassemble_ip_packet(fragment_dict[ip_header.id])
+
+        # Si el resultado de intentar reensamblar el datagrama no es None, imprimimos
+        # el mensaje en pantalla y quitamos la llave junto con su lista asociada para
+        # poder recibir el mensaje nuevamente
+        if reassembled_datagram is not None:
+          fragment_dict.pop(ip_header.id)
+          print(parse_ip_header(reassembled_datagram).msg)
 
       # De lo contrario buscamos como redirigir en la tabla de rutas
       else:
