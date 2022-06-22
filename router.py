@@ -78,19 +78,20 @@ if __name__ == '__main__':
       else:
 
         # Generamos el siguiente salto
-        forward_address, link_mtu = next_hop(
+        forward_address_link_mtu = next_hop(
           round_robin_routing_table,
           (ip_header.ip_address, ip_header.port)
         )
 
         # Si el forward adress es None, luego no se encontró como redirigir en la
         # tabla de ruta, e imprimimos un mensaje informando aquello
-        if forward_address is None:
+        if forward_address_link_mtu is None:
           print('No hay rutas hacia', (ip_header.ip_address, ip_header.port), 
                 'para paquete', ip_header.ip_address)
         
         # De lo contrario, se encontró una forma de redirigir, e informamos aquello
         else:
+          forward_address, link_mtu = forward_address_link_mtu
           print('redirigiendo paquete', ip_header.ip_address, 'con destino final',
                 (ip_header.ip_address, ip_header.port), 'desde', (router_IP, router_port),
                 'hacia', forward_address)
