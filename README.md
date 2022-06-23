@@ -19,5 +19,5 @@ python3 router.py 127.0.0.1 8881 rutas/v1/R1.txt
 
 ## Funcionamiento
 
-La lógica de un router se encuentra dentro del script `router.py`, y todas las funcionalidades auxiliares dentro de `utilities.py`. Puesto que está todo documentado dentro de los respectivos archivos, se procede solo a explicar el cambio realizado a round robin. Se agrega el MTU a las entradas almacenadas dentro de cada arreglo circular en el diccionario de `RoundRobinRoutingTable`, de esta manera al llamar a `next_hop()`, se retornará la dirección a la cual hacer forward junto con el MTU del enlace.
+La lógica de un router se encuentra dentro del script `router.py`, y todas las funcionalidades auxiliares dentro de `utilities.py`. Puesto que está todo documentado dentro de los respectivos archivos, y se reutiliza el código escrito para la actividad anterior, se procede solo a explicar el cambio realizado a round robin. Se agrega el MTU a las entradas almacenadas dentro de cada arreglo circular en el diccionario de `RoundRobinRoutingTable`, de esta manera al llamar a `next_hop()`, se retornará la dirección a la cual hacer forward junto con el MTU del enlace.
 
