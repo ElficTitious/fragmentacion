@@ -7,7 +7,7 @@ Semana 10-11: Redes IP, Módulo 4: Redes y Ruteo, CC4303-1
 Para ejecutar es necesario correr cada router en una ventana de terminal distinta, y enviar mensajes al router deseado usando `netcat`.
 Cada router necesita como argumentos la IP del router y su puerto, sumado al nombre del archivo en que se encuentran sus tablas de ruta.
 
-**Ejecución:
+**Ejecución:**
 
 Para correr cada router se debe pasar la IP del router y su puerto, sumado al nombre del archivo en que se encuentran sus tablas de ruta.
 
